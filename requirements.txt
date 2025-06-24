@@ -1,0 +1,16 @@
+# ── requirements.txt ──
+# deep-learning runtime
+torch==2.6.0                                     # Saved PyTorch version
+torchvision==0.19.0                              # companion wheel for 2.6.0
+
+# core numeric stack — must stay on the last 1-series build
+numpy==1.23.5                                    # keeps numpy._core.numeric
+pandas==1.5.3                                    # last pandas that works with NumPy 1.23
+scipy==1.11.4                                    # optional but often needed
+
+# model-persistence stack
+scikit-learn==1.6.1                              # matches StandardScaler in the pickle
+joblib==1.3.2                                    # compatible with sklearn-1.6
+
+# misc utilities (only if you import them)
+typing-extensions==4.11.0
