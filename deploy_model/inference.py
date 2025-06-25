@@ -157,21 +157,23 @@ def input_fn(body, content_type: str) -> np.ndarray:
 
 def predict_fn(data: np.ndarray, model: nn.Module) -> np.ndarray:
     """
-    Normalize ➜ torch tensor ➜ forward pass ➜ denormalize.
+    data : numpy array, shape (batch, seq_len, features)
     """
-    # 1) normalize
-    norm = _normalize(data.reshape(-1, data.shape[-2], data.shape[-1]), model)
+    B, T, F = data.shape
 
-    # 2) to torch
+    # ---- 1) flatten to 2-D (samples, features) for the scaler ----
+    flat = data.reshape(-1, F)                    # (B*T, F)
+    norm = _normalize(flat, model).astype(np.float32)
+    norm = norm.reshape(B, T, F)                  # restore (B, T, F)
+
+    # ---- 2) model forward ----
     tensor = torch.from_numpy(norm).to(next(model.parameters()).device)
-
     with torch.no_grad():
-        raw = model(tensor).cpu().numpy()  # (batch, output_size)
+        raw = model(tensor).cpu().numpy()         # (B, out_features)
 
-    # 3) denormalize each sample in batch
-    denorm = np.stack([_denormalize(x, model) for x in raw])
-
-    return denorm  # numpy array
+    # ---- 3) de-normalize outputs (still 2-D) ----
+    denorm = _denormalize(raw, model)             # (B, out_features)
+    return denorm
 
 
 def output_fn(prediction: np.ndarray, accept: str) -> Tuple[str, str]:
