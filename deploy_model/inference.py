@@ -20,6 +20,7 @@ from typing import Any, Dict, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+from typing import Union
 
 
 # ────────────────────────────────────────────────────────────────────────────────
@@ -113,7 +114,7 @@ def model_fn(model_dir: str) -> nn.Module:
     return model
 
 
-def _json_to_array(body: bytes | str) -> np.ndarray:
+def _json_to_array(body: Union[bytes, str]) -> np.ndarray:
     """Parse the JSON body and return an ndarray (n_rows, n_features)."""
     if isinstance(body, (bytes, bytearray)):
         body = body.decode("utf-8")
