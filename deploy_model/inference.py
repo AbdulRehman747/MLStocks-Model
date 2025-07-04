@@ -70,6 +70,10 @@ def _json_to_arr(body: Union[str, bytes, bytearray]) -> np.ndarray:
     if isinstance(body, (bytes, bytearray)):
         body = body.decode("utf-8")
     data = json.loads(body)
+    print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+    print(type(data["instances"]))
+    print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+
     rows = data["instances"] if isinstance(data, dict) else data
     if rows and isinstance(rows[0], dict):
         keys = list(rows[0].keys())
