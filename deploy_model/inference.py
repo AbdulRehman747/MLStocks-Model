@@ -1,17 +1,3 @@
-"""
-TorchServe handler for MLStocks LSTM
-------------------------------------
-
-✓ JSON / NPY / Pickle payloads
-✓ Normalises inputs with saved scalers
-✓ Predicts on CPU or GPU
-✓ De-normalises outputs (volume ≥ 0 etc.)
-✓ Returns {"predictions": [[...], ...]}
-
-Python 3.9 compatible.
-"""
-
-# ────────────── imports ──────────────
 import io, json, pickle
 from pathlib import Path
 from typing import Any, Dict, Tuple, Union
@@ -20,32 +6,22 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-# ────────── network ──────────
 class StockLSTM(nn.Module):
-    def __init__(
-        self,
-        input_size: int = 5,
-        hidden_size: int = 64,
-        num_layers: int = 2,
-        output_size: int = 25,
-        dropout: float = 0.2,
-    ):
+    def __init__(self, input_size: int = 5, hidden_size: int = 64, num_layers: int = 2, output_size: int = 25, dropout: float = 0.2):
         super().__init__()
-        self.lstm = nn.LSTM(
-            input_size, hidden_size, num_layers, batch_first=True, dropout=dropout
-        )
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(hidden_size, output_size)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:          # x (B,T,F)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         B = x.size(0)
         device = x.device
         h0 = torch.zeros(self.lstm.num_layers, B, self.lstm.hidden_size, device=device)
         c0 = torch.zeros_like(h0)
         out, _ = self.lstm(x, (h0, c0))
-        return self.fc(self.dropout(out[:, -1]))                 # (B,out)
+        return self.fc(self.dropout(out[:, -1]))
 
-# ────────── helpers ──────────
+
 def _cpu_load(path: Path) -> Dict[str, Any]:
     with path.open("rb") as f:
         pkg = pickle.load(f)
@@ -55,7 +31,6 @@ def _cpu_load(path: Path) -> Dict[str, Any]:
 
 
 def _normalize(mat: np.ndarray, model: nn.Module) -> np.ndarray:
-    """mat (N,5)"""
     if model.use_global_scaler:
         return model.global_scaler.transform(mat)
     out = mat.copy()
@@ -65,7 +40,6 @@ def _normalize(mat: np.ndarray, model: nn.Module) -> np.ndarray:
 
 
 def _denormalize(mat: np.ndarray, model: nn.Module) -> np.ndarray:
-    """mat (B, H*5) -> real scale"""
     B, D = mat.shape
     F = 5
     if D % F != 0:
@@ -80,16 +54,15 @@ def _denormalize(mat: np.ndarray, model: nn.Module) -> np.ndarray:
             real[:, i] = scaler.inverse_transform(flat[:, i].reshape(-1, 1)).ravel()
     return real.reshape(B, D)
 
-# ────────── TorchServe entry points ──────────
+
 def model_fn(model_dir: str) -> nn.Module:
     pkg = _cpu_load(Path(model_dir) / "model.pkl")
     model = StockLSTM(**pkg["model_architecture"]).eval()
     model.load_state_dict(pkg["model_state_dict"])
-
     scalers = pkg["scalers"]
-    model.use_global_scaler   = scalers["use_global_scaler"]
-    model.global_scaler       = scalers["global_scaler"]
-    model.individual_scalers  = scalers["individual_scalers"]
+    model.use_global_scaler = scalers["use_global_scaler"]
+    model.global_scaler = scalers["global_scaler"]
+    model.individual_scalers = scalers["individual_scalers"]
     return model
 
 
@@ -114,22 +87,38 @@ def input_fn(body, content_type: str) -> np.ndarray:
     else:
         raise ValueError(f"Unsupported content-type: {content_type}")
     if arr.ndim == 2:
-        arr = arr[None, ...]             # (1,T,F)
-    return arr                           # (B,T,F)
+        arr = arr[None, ...]
+    return arr
 
 
 def predict_fn(data: np.ndarray, model: nn.Module) -> np.ndarray:
     B, T, F = data.shape
     norm = _normalize(data.reshape(-1, F), model).reshape(B, T, F)
-
     tensor = torch.from_numpy(norm).to(next(model.parameters()).device)
     with torch.no_grad():
-        raw = model(tensor).cpu().numpy()        # (B, H*5)
-
-    return _denormalize(raw, model)              # real scale (B, H*5)
+        raw = model(tensor).cpu().numpy()
+    denorm = _denormalize(raw, model)
+    B, D = denorm.shape
+    denorm = denorm.reshape(B, 5, 5)
+    return denorm
 
 
 def output_fn(pred: np.ndarray, accept: str) -> Tuple[str, str]:
     if accept not in ("application/json", "application/json; charset=utf-8"):
         raise ValueError(f"Unsupported accept header {accept}")
-    return json.dumps({"predictions": pred.tolist()}), accept
+    vol = pred[0, :, 0].tolist()
+    opn = pred[0, :, 1].tolist()
+    cls = pred[0, :, 2].tolist()
+    hgh = pred[0, :, 3].tolist()
+    low = pred[0, :, 4].tolist()
+    records = []
+    for i in range(5):
+        records.append({
+            "predicted_minute": i + 1,
+            "volume": vol[i],
+            "open": opn[i],
+            "close": cls[i],
+            "high": hgh[i],
+            "low": low[i]
+        })
+    return json.dumps({"predictions": records}), accept
