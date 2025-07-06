@@ -78,6 +78,7 @@ def _json_to_arr(body: Union[str, bytes, bytearray]) -> np.ndarray:
     if rows and isinstance(rows[0], dict):
         keys = list(rows[0].keys())
         rows = [[r[k] for k in keys] for r in rows]
+        print("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
         print("Rows (preview):", rows[:2])
     return np.asarray(rows, dtype=np.float32)
 
